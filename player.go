@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -20,24 +21,28 @@ const (
 )
 
 var (
-	addr = flag.String("http", ":8080", "http listen address")
-	root = flag.String("root", "/home/flo/nfs/flo/Music/", "music root")
+	bindHost  = flag.String("host", "[::1]", "host to bind to")
+	bindPort  = flag.Int("port", 8080, "http listen address")
+	musicRoot = flag.String("root", "/home/flo/nfs/flo/Music/", "music root")
 )
 
 func main() {
 	flag.Parse()
 	http.HandleFunc("/", Index)
 	http.HandleFunc(filePrefix, File)
-	http.ListenAndServe(*addr, nil)
+	err := http.ListenAndServe(fmt.Sprintf("%s:%d", *bindHost, *bindPort), nil)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func Index(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "./index.html")
-	log.Print("index called")
+	log.Printf("serving request to %s", r.RemoteAddr)
 }
 
 func File(w http.ResponseWriter, r *http.Request) {
-	fn := filepath.Join(*root, r.URL.Path[len(filePrefix):])
+	fn := filepath.Join(*musicRoot, r.URL.Path[len(filePrefix):])
 	fi, err := os.Stat(fn)
 	log.Print("File called: ", fn)
 
