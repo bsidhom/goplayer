@@ -21,16 +21,34 @@ const (
 )
 
 var (
-	bindHost  = flag.String("host", "[::1]", "host to bind to")
-	bindPort  = flag.Int("port", 8080, "http listen address")
-	musicRoot = flag.String("root", "/home/flo/nfs/flo/Music/", "music root")
+	bindAddr string
+	musicRoot string
+	//bindHost  = flag.String("host", "[::1]", "host to bind to")
+	//bindPort  = flag.Int("port", 8080, "http listen address")
+	//musicRoot = flag.String("root", ".", "music root")
 )
 
-func main() {
+func readFlags() {
+	bindHost  := flag.String("host", "[::1]", "host to bind to")
+	bindPort  := flag.Int("port", 8080, "http listen address")
+	root := flag.String("root", ".", "music root")
 	flag.Parse()
+	bindAddr = fmt.Sprintf("%s:%d", *bindHost, *bindPort)
+	absRoot, err := filepath.Abs(*root)
+	if err != nil {
+		log.Fatal(err)
+	}
+	musicRoot = absRoot
+}
+
+func main() {
+	//flag.Parse()
+	readFlags()
 	http.HandleFunc("/", Index)
 	http.HandleFunc(filePrefix, File)
-	err := http.ListenAndServe(fmt.Sprintf("%s:%d", *bindHost, *bindPort), nil)
+	log.Printf("music root: %q", musicRoot)
+	log.Printf("starting server on %s", bindAddr)
+	err := http.ListenAndServe(bindAddr, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -38,37 +56,35 @@ func main() {
 
 func Index(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "./index.html")
-	log.Printf("serving request to %s", r.RemoteAddr)
+	log.Printf("serving index to %s", r.RemoteAddr)
 }
 
 func File(w http.ResponseWriter, r *http.Request) {
-	fn := filepath.Join(*musicRoot, r.URL.Path[len(filePrefix):])
+	fn := filepath.Join(musicRoot, r.URL.Path[len(filePrefix):])
 	fi, err := os.Stat(fn)
-	log.Print("File called: ", fn)
+	log.Printf("serving request %q to %s\n", r.URL, r.RemoteAddr)
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-	if fi.IsDir() {
+		log.Println(err.Error())
+	} else if fi.IsDir() {
 		serveDirectory(fn, w, r)
-		return
+	} else {
+		http.ServeFile(w, r, fn)
 	}
-	http.ServeFile(w, r, fn)
 }
 
-func serveDirectory(fn string, w http.ResponseWriter,
-	r *http.Request) {
+func serveDirectory(fn string, w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if err, ok := recover().(error); ok {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "error", http.StatusInternalServerError)
+			log.Println(err.Error())
 		}
 	}()
 	d, err := os.Open(fn)
 	if err != nil {
 		panic(err)
 	}
-	log.Print("serverDirectory called: ", fn)
 
 	files, err := d.Readdir(-1)
 	if err != nil {
@@ -91,4 +107,5 @@ func serveDirectory(fn string, w http.ResponseWriter,
 	if err := j.Encode(&entries); err != nil {
 		panic(err)
 	}
+	log.Printf("serving directory: %s", fn)
 }
